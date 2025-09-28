@@ -1,19 +1,21 @@
 from flask import Flask, request, jsonify
-import sqlite3
 from flask_cors import CORS
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 app = Flask(__name__)
-#CORS(app)  # local development
-CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"])  # production
+CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"])
 
+DATABASE_URL = os.environ.get("postgresql://ecodatabase_user:NKEY6c4wquO6fEbxk20GEnhibKEqeiYs@dpg-d3cm65adbo4c73ead4s0-a.oregon-postgres.render.com/ecodatabase")
 
-# --- Initialize SQLite Database ---
+# --- Initialize Postgres Database ---
 def init_db():
-    conn = sqlite3.connect("contact.db")
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS contacts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
             email TEXT NOT NULL,
             company TEXT,
@@ -24,6 +26,7 @@ def init_db():
         )
     """)
     conn.commit()
+    cursor.close()
     conn.close()
 
 init_db()
@@ -43,47 +46,30 @@ def save_contact():
     if not name or not email or not message:
         return jsonify({"error": "Missing required fields"}), 400
 
-    conn = sqlite3.connect("contact.db")
+    conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO contacts (name, email, company, phone, service, message)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s)
     """, (name, email, company, phone, service, message))
     conn.commit()
+    cursor.close()
     conn.close()
 
     return jsonify({"message": "Form submitted successfully!"}), 201
 
 
-# --- API Route to Fetch All Submissions (for dashboard) ---
+# --- API Route to Fetch All Submissions ---
 @app.route("/api/contacts", methods=["GET"])
 def get_contacts():
-    conn = sqlite3.connect("contact.db")
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM contacts ORDER BY created_at DESC")
     rows = cursor.fetchall()
+    cursor.close()
     conn.close()
+    return jsonify(rows)
 
-    contacts = [
-        {
-            "id": row[0],
-            "name": row[1],
-            "email": row[2],
-            "company": row[3],
-            "phone": row[4],
-            "service": row[5],
-            "message": row[6],
-            "created_at": row[7]  # timestamp of submission
-        }
-        for row in rows
-    ]
-
-    return jsonify(contacts)
-
-
-# if __name__ == "__main__":
-#     app.run(debug=True)       #local development
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
