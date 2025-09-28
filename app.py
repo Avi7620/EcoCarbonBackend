@@ -1,9 +1,11 @@
 from flask import Flask, request, jsonify
 import sqlite3
 from flask_cors import CORS
-
+import os
 app = Flask(__name__)
-CORS(app)  # allow frontend (React) to talk to Flask
+#CORS(app)  # local development
+CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:3000"])  # production
+
 
 # --- Initialize SQLite Database ---
 def init_db():
@@ -79,5 +81,9 @@ def get_contacts():
     return jsonify(contacts)
 
 
+# if __name__ == "__main__":
+#     app.run(debug=True)       local development
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
