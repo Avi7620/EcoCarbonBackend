@@ -4,7 +4,7 @@ from flask_cors import CORS
 import os
 app = Flask(__name__)
 #CORS(app)  # local development
-CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:3000"])  # production
+CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"])  # production
 
 
 # --- Initialize SQLite Database ---
@@ -82,7 +82,7 @@ def get_contacts():
 
 
 # if __name__ == "__main__":
-#     app.run(debug=True)       local development
+#     app.run(debug=True)       #local development
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
