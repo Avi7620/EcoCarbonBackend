@@ -7,7 +7,7 @@ from psycopg2.extras import RealDictCursor
 app = Flask(__name__)
 CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"])
 
-DATABASE_URL = os.environ.get("postgresql://ecodatabase_user:NKEY6c4wquO6fEbxk20GEnhibKEqeiYs@dpg-d3cm65adbo4c73ead4s0-a.oregon-postgres.render.com/ecodatabase")
+DATABASE_URL = os.environ.get("postgresql://ecodatabase_user:NKEY6c4wquO6fEbxk20GEnhibKEqeiYs@dpg-d3cm65adbo4c73ead4s0-a/ecodatabase")
 
 # --- Initialize Postgres Database ---
 def init_db():
