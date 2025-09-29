@@ -3,22 +3,22 @@ from flask_cors import CORS
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from emailService import init_mail, send_otp_email, verify_otp
+from emailService import init_mail, send_otp_email, verify_otp, mail
 
 # --- Flask App Setup ---
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
 CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"], supports_credentials=True)
 
-# --- Mail Config (use env variables or direct) ---
-app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "jadhavavi7620@gmail.com")
-app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "pfwhfzhxcucbcoiy")
-init_mail(app)  # Initialize Flask-Mail
-
 # --- Database Config ---
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set!")
+
+# --- Mail Config ---
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")  # Your Gmail
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")  # App Password
+init_mail(app)
 
 # --- DB Init ---
 def init_db():
@@ -94,12 +94,11 @@ def send_otp():
     data = request.json
     email = data.get("email")
 
-    # Only allow admin email
     if email != "jadhavaj7620@gmail.com":
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
-        send_otp_email(app, email)  # Pass app to function
+        send_otp_email(email)
         return jsonify({"message": "OTP sent to email"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
