@@ -3,21 +3,25 @@ from flask_cors import CORS
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from emailService import init_mail, send_otp_email, verify_otp, mail
+from emailService import init_mail, send_otp_email, verify_otp
 
+# --- Flask App Setup ---
 app = Flask(__name__)
-app.secret_key = "your-secret-key"
+app.secret_key = os.environ.get("SECRET_KEY", "your-secret-key")
 CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"], supports_credentials=True)
 
 # --- Mail Config ---
 app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
 app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+app.config["MAIL_SERVER"] = "smtp.gmail.com"
+app.config["MAIL_PORT"] = 587
+app.config["MAIL_USE_TLS"] = True
+init_mail(app)  # Initialize Mail with app
 
-# Initialize Flask-Mail **after setting config**
-init_mail(app)
-
-# --- DB Init (as you already have) ---
+# --- Database Config ---
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable not set!")
 
 # --- DB Init ---
 def init_db():
@@ -89,11 +93,12 @@ def get_contacts():
 # API 3: Send OTP (Admin Login)
 # ======================
 @app.route("/api/send-otp", methods=["POST"])
-def send_otp():
+def send_otp_route():
     data = request.json
     email = data.get("email")
 
-    if email != "jadhavaj7620@gmail.com":
+    # Only allow admin email
+    if email != os.environ.get("ADMIN_EMAIL", "jadhavaj7620@gmail.com"):
         return jsonify({"error": "Unauthorized"}), 403
 
     try:
@@ -129,5 +134,6 @@ def admin_dashboard():
         return jsonify({"error": "Unauthorized"}), 403
     return jsonify({"message": "Welcome to Admin Dashboard"}), 200
 
+# --- Run App ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

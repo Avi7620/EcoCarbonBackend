@@ -1,29 +1,40 @@
+from flask import current_app
 from flask_mail import Mail, Message
 import time
 import random
 
-mail = Mail()  # Create Mail object, but don't initialize yet
+# Create Mail object (uninitialized)
+mail = Mail()
 
 # OTP storage (in-memory)
 otp_storage = {}  # { email: {otp: 123456, expires: 1696000000} }
 
 def init_mail(app):
-    """Initialize Flask-Mail with app configuration"""
+    """
+    Initialize Flask-Mail with app configuration.
+    Ensure MAIL_USERNAME and MAIL_PASSWORD are set in environment/app.config
+    """
     if not app.config.get("MAIL_USERNAME") or not app.config.get("MAIL_PASSWORD"):
         raise Exception("MAIL_USERNAME or MAIL_PASSWORD not set in app.config")
-    mail.init_app(app)  # Now mail.app is set
+    mail.init_app(app)  # Attach app to mail
 
 def send_otp_email(email):
-    """Generate and send OTP to the given email"""
+    """
+    Generate and send OTP to the given email.
+    Wraps in current_app context to ensure mail.app is available.
+    """
+    app = current_app._get_current_object()
     if not mail.app:
-        raise Exception("Mail is not initialized. Call init_mail(app) first.")
+        mail.init_app(app)  # Initialize if somehow not done
 
+    # Generate OTP
     otp = random.randint(100000, 999999)
     otp_storage[email] = {"otp": otp, "expires": time.time() + 300}  # 5 min expiry
 
+    # Create and send email
     msg = Message(
         subject="Your Admin OTP",
-        sender=mail.app.config["MAIL_USERNAME"],
+        sender=app.config["MAIL_USERNAME"],
         recipients=[email]
     )
     msg.body = f"Your OTP is {otp}. It will expire in 5 minutes."
@@ -31,7 +42,9 @@ def send_otp_email(email):
     return otp
 
 def verify_otp(email, otp):
-    """Verify OTP for the given email"""
+    """
+    Verify OTP for the given email
+    """
     record = otp_storage.get(email)
     if not record:
         return False, "OTP not requested"
