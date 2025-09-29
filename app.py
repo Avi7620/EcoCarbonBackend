@@ -5,20 +5,19 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from emailService import init_mail, send_otp_email, verify_otp, mail
 
-# --- Flask App Setup ---
 app = Flask(__name__)
 app.secret_key = "your-secret-key"
 CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"], supports_credentials=True)
 
-# --- Database Config ---
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL environment variable not set!")
-
 # --- Mail Config ---
-app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")  # Your Gmail
-app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")  # App Password
+app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
+app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
+
+# Initialize Flask-Mail **after setting config**
 init_mail(app)
+
+# --- DB Init (as you already have) ---
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # --- DB Init ---
 def init_db():
