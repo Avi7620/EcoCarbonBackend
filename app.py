@@ -5,7 +5,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__)
-CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"])
+CORS(app, origins=["https://carbonfrentend.onrender.com", "http://localhost:5173"])
 
 import os
 
