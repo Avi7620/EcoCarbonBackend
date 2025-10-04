@@ -92,7 +92,7 @@ def send_otp():
     data = request.get_json()
     email = data.get("email")
 
-    allowed_admins = [os.getenv("ADMIN_EMAIL", "jadhavaj7620@gmail.com")]
+    allowed_admins = [os.getenv("ADMIN_EMAIL", "jadhavavi7620@gmail.com")]
     if email not in allowed_admins:
         return jsonify({"error": "Unauthorized email"}), 403
 
