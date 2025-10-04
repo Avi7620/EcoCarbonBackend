@@ -3,45 +3,36 @@ from flask_cors import CORS
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+import smtplib
 import random
 import string
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 app = Flask(__name__)
 
-# --- Security ---
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecret_local_key")
 
-# --- Database Config ---
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL not set!")
+app.secret_key = "supersecret_local_key"   # manually set secret key
+DATABASE_URL = "postgresql://ecodatabase_user:NKEY6c4wquO6fEbxk20GEnhibKEqeiYs@dpg-d3cm65adbo4c73ead4s0-a.oregon-postgres.render.com/ecodatabase"
+EMAIL_ADDRESS = "jadhavavi7620@gmail.com"
+EMAIL_PASSWORD = "pfwhfzhxcucbcoiy"
 
-# --- SendGrid Config ---
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")   # set in Render
-EMAIL_ADDRESS = os.getenv("SENDGRID_FROM_EMAIL")   # verified sender in SendGrid
-
-# --- CORS ---
 CORS(
     app,
-    origins=[
-        "https://ecocarbon.onrender.com",
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "https://ecarbon5.onrender.com"
-    ],
+    origins=["https://ecocarbon.onrender.com", "http://localhost:5173", "http://localhost:3000", "http://localhost:3001","https://ecarbon5.onrender.com"],
     supports_credentials=True
 )
-
 app.config.update(
-    SESSION_COOKIE_SAMESITE="None",
-    SESSION_COOKIE_SECURE=False,  # Change to True in production
+    SESSION_COOKIE_SAMESITE="None",  # cross-site for local testing
+    SESSION_COOKIE_SECURE=False,     # True if using HTTPS
     SESSION_COOKIE_HTTPONLY=True
 )
 
-# --- Init DB ---
+# --- Database ---
+
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable not set!")
+
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
@@ -63,36 +54,44 @@ def init_db():
 
 init_db()
 
-# --- OTP Store ---
+
+# Store OTPs temporarily (in-memory for demo)
 otp_store = {}
 
+# --- Generate OTP ---
 def generate_otp(length=6):
     return ''.join(random.choices(string.digits, k=length))
 
-# --- Send Email ---
+# --- Send OTP Email ---
 def send_email(to_email, otp):
     try:
-        message = Mail(
-            from_email=EMAIL_ADDRESS,
-            to_emails=to_email,
-            subject="EcoCarbon Admin Login OTP",
-            plain_text_content=f"Your OTP for EcoCarbon Admin Login is: {otp}"
-        )
-        sg = SendGridAPIClient(SENDGRID_API_KEY)
-        response = sg.send(message)
-        print("Email sent:", response.status_code)
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_ADDRESS
+        msg["To"] = to_email
+        msg["Subject"] = "EcoCarbon Admin Login OTP"
+
+        body = f"Your OTP for EcoCarbon Admin Login is: {otp}"
+        msg.attach(MIMEText(body, "plain"))
+
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_ADDRESS, to_email, msg.as_string())
+        server.quit()
         return True
     except Exception as e:
         print("Error sending email:", e)
         return False
 
-# --- Routes ---
+
+# --- API: Send OTP ---
 @app.route("/api/send-otp", methods=["POST"])
 def send_otp():
     data = request.get_json()
     email = data.get("email")
 
-    allowed_admins = [os.getenv("ADMIN_EMAIL", "admin@example.com")]
+    # Only allow specific admin emails
+    allowed_admins = ["jadhavaj7620@gmail.com"]  # <-- change to your admin emails
     if email not in allowed_admins:
         return jsonify({"error": "Unauthorized email"}), 403
 
@@ -104,6 +103,8 @@ def send_otp():
     else:
         return jsonify({"error": "Failed to send OTP"}), 500
 
+
+# --- API: Verify OTP ---
 @app.route("/api/verify-otp", methods=["POST"])
 def verify_otp():
     data = request.get_json()
@@ -111,15 +112,21 @@ def verify_otp():
     otp = data.get("otp")
 
     if email in otp_store and otp_store[email] == otp:
-        session["admin"] = email
-        otp_store.pop(email)
+        session["admin"] = email  # Store session
+        otp_store.pop(email)  # Remove OTP once verified
         return jsonify({"message": "Login successful"})
     else:
         return jsonify({"error": "Invalid OTP"}), 400
 
-def require_admin():
-    return "admin" in session
 
+# --- Middleware: Protect Admin Routes ---
+def require_admin():
+    if "admin" not in session:
+        return False
+    return True
+
+
+# --- API: Save Contact ---
 @app.route("/api/contact", methods=["POST"])
 def save_contact():
     data = request.get_json()
@@ -145,6 +152,8 @@ def save_contact():
 
     return jsonify({"message": "Form submitted successfully!"}), 201
 
+
+# --- API: Fetch All Contacts (Admin Only) ---
 @app.route("/api/contacts", methods=["GET"])
 def get_contacts():
     if not require_admin():
@@ -158,18 +167,23 @@ def get_contacts():
     conn.close()
     return jsonify(rows)
 
+
+# --- API: Logout ---
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.pop("admin", None)
     return jsonify({"message": "Logged out successfully"})
 
+
 @app.route('/api/session', methods=['GET'])
 def session_status():
+    """Return current admin session status for frontend verification."""
     admin = session.get('admin')
     if admin:
         return jsonify({'admin': admin})
     else:
         return jsonify({'admin': None}), 200
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
