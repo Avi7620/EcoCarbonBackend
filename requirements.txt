@@ -3,4 +3,5 @@ flask-cors
 werkzeug==2.0.3
 psycopg2-binary
 Flask-Mail==0.9.1
+sendgrid
 gunicorn
