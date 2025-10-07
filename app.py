@@ -3,23 +3,47 @@ from flask_cors import CORS
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from emailService import init_mail, send_otp_email, verify_otp, mail
+import random
+import string
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 app = Flask(__name__)
-app.secret_key = "your-secret-key"
-CORS(app, origins=["https://ecocarbon.onrender.com", "http://localhost:5173"], supports_credentials=True)
 
-# --- Mail Config ---
-app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME")
-app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD")
 
-# Initialize Flask-Mail **after setting config**
-init_mail(app)
+# --- Security ---
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "supersecret_local_key")
 
-# --- DB Init (as you already have) ---
-DATABASE_URL = os.environ.get("DATABASE_URL")
+# --- Database Config ---
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL not set!")
 
-# --- DB Init ---
+# --- SendGrid Config ---
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")   # set in Render
+EMAIL_ADDRESS = os.getenv("SENDGRID_FROM_EMAIL")   # verified sender in SendGrid
+
+# --- CORS ---
+CORS(
+    app,
+    origins=[
+        
+        "https://ecocarbon.onrender.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://ecarbon5.onrender.com"
+    ],
+    supports_credentials=True
+)
+
+app.config.update(
+    SESSION_COOKIE_SAMESITE=None,
+    SESSION_COOKIE_SECURE=False,  # Change to True in production
+    SESSION_COOKIE_HTTPONLY=True
+)
+
+# --- Init DB ---
 def init_db():
     conn = psycopg2.connect(DATABASE_URL)
     cursor = conn.cursor()
@@ -41,9 +65,63 @@ def init_db():
 
 init_db()
 
-# ======================
-# API 1: Save Contact Form
-# ======================
+# --- OTP Store ---
+otp_store = {}
+
+def generate_otp(length=6):
+    return ''.join(random.choices(string.digits, k=length))
+
+# --- Send Email ---
+def send_email(to_email, otp):
+    try:
+        message = Mail(
+            from_email=EMAIL_ADDRESS,
+            to_emails=to_email,
+            subject="EcoCarbon Admin Login OTP",
+            plain_text_content=f"Your OTP for EcoCarbon Admin Login is: {otp}"
+        )
+        sg = SendGridAPIClient(SENDGRID_API_KEY)
+        response = sg.send(message)
+        print("Email sent:", response.status_code)
+        return True
+    except Exception as e:
+        print("Error sending email:", e)
+        return False
+
+# --- Routes ---
+@app.route("/api/send-otp", methods=["POST"])
+def send_otp():
+    data = request.get_json()
+    email = data.get("email")
+
+    allowed_admins = [os.getenv("ADMIN_EMAIL", "jadhavavi7620@gmail.com")]
+    if email not in allowed_admins:
+        return jsonify({"error": "Unauthorized email"}), 403
+
+    otp = generate_otp()
+    otp_store[email] = otp
+
+    if send_email(email, otp):
+        return jsonify({"message": "OTP sent successfully"})
+    else:
+        return jsonify({"error": "Failed to send OTP"}), 500
+
+@app.route("/api/verify-otp", methods=["POST"])
+def verify_otp():
+    data = request.get_json()
+    email = data.get("email")
+    otp = data.get("otp")
+
+    if email in otp_store and otp_store[email] == otp:
+        session["admin"] = email
+        otp_store.pop(email)
+        return jsonify({"message": "Login successful"})
+    else:
+        return jsonify({"error": "Invalid OTP"}), 400
+
+def require_admin():
+    return "admin" in session
+
 @app.route("/api/contact", methods=["POST"])
 def save_contact():
     data = request.get_json()
@@ -69,13 +147,10 @@ def save_contact():
 
     return jsonify({"message": "Form submitted successfully!"}), 201
 
-# ======================
-# API 2: Get Contacts (Admin Only)
-# ======================
 @app.route("/api/contacts", methods=["GET"])
 def get_contacts():
-    if not session.get("admin"):
-        return jsonify({"error": "Unauthorized"}), 403
+    # if not require_admin():
+    #     return jsonify({"error": "Unauthorized"}), 401
 
     conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
     cursor = conn.cursor()
@@ -85,49 +160,18 @@ def get_contacts():
     conn.close()
     return jsonify(rows)
 
-# ======================
-# API 3: Send OTP (Admin Login)
-# ======================
-@app.route("/api/send-otp", methods=["POST"])
-def send_otp():
-    data = request.json
-    email = data.get("email")
+@app.route("/api/logout", methods=["POST"])
+def logout():
+    session.pop("admin", None)
+    return jsonify({"message": "Logged out successfully"})
 
-    if email != "jadhavaj7620@gmail.com":
-        return jsonify({"error": "Unauthorized"}), 403
-
-    try:
-        send_otp_email(email)
-        return jsonify({"message": "OTP sent to email"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ======================
-# API 4: Verify OTP
-# ======================
-@app.route("/api/verify-otp", methods=["POST"])
-def verify_otp_route():
-    data = request.json
-    email = data.get("email")
-    otp = data.get("otp")
-
-    if not email or not otp:
-        return jsonify({"error": "Email and OTP required"}), 400
-
-    success, msg = verify_otp(email, otp)
-    if success:
-        session["admin"] = True
-        return jsonify({"message": "Login successful"}), 200
-    return jsonify({"error": msg}), 400
-
-# ======================
-# API 5: Admin Dashboard
-# ======================
-@app.route("/api/admin-dashboard", methods=["GET"])
-def admin_dashboard():
-    if not session.get("admin"):
-        return jsonify({"error": "Unauthorized"}), 403
-    return jsonify({"message": "Welcome to Admin Dashboard"}), 200
+@app.route('/api/session', methods=['GET'])
+def session_status():
+    admin = session.get('admin')
+    if admin:
+        return jsonify({'admin': admin})
+    else:
+        return jsonify({'admin': None}), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
